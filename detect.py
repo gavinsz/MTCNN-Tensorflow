@@ -32,13 +32,14 @@ from src.mtcnn import PNet, RNet, ONet
 from tools import detect_face, get_model_filenames
 
 class FaceDectect:
-    def __init__(self, args, sess):
-        self.minsize = args.minsize
-        self.factor = args.factor
-        self.threshold = args.threshold
-        self.sess = sess
+    def __init__(self, ):
+        self.minsize = 20
+        self.factor = 0.7
+        self.threshold = [0.6, 0.7, 0.8]
+        self.model_dir = 'save_model/all_in_one'
+        self.sess = tf.Session()
 
-        file_paths = get_model_filenames(args.model_dir)
+        file_paths = get_model_filenames(self.model_dir)
         if len(file_paths) == 3:
             image_pnet = tf.placeholder(
                 tf.float32, [None, None, None, 3])
@@ -63,25 +64,28 @@ class FaceDectect:
                             [v for v in tf.global_variables()
                             if v.name[0:5] == "onet/"])
 
-            saver_pnet.restore(sess, file_paths[0])
+            saver_pnet.restore(self.sess, file_paths[0])
 
-            def pnet_fun(img): return sess.run(
+            def pnet_fun(img): return self.sess.run(
                 out_tensor_pnet, feed_dict={image_pnet: img})
 
-            saver_rnet.restore(sess, file_paths[1])
+            saver_rnet.restore(self.sess, file_paths[1])
 
-            def rnet_fun(img): return sess.run(
+            def rnet_fun(img): return self.sess.run(
                 out_tensor_rnet, feed_dict={image_rnet: img})
 
-            saver_onet.restore(sess, file_paths[2])
+            saver_onet.restore(self.sess, file_paths[2])
 
-            def onet_fun(img): return sess.run(
+            def onet_fun(img): return self.sess.run(
                 out_tensor_onet, feed_dict={image_onet: img})
 
         else:
             saver = tf.train.import_meta_graph(file_paths[0])
             saver.restore(self.sess, file_paths[1])
     
+    def __del__(self):
+        self.sess.close()
+
     def pnet_fun(self, img):
         return self.sess.run(
                             ('softmax/Reshape_1:0',
@@ -100,14 +104,15 @@ class FaceDectect:
                             'onet/conv6-2/onet/conv6-2:0',
                             'onet/conv6-3/onet/conv6-3:0'),
                             feed_dict={'Placeholder_2:0': img})
-    def detect(self, file):
+    def detect(self, file, save_name=None):
         img = cv2.imread(file)
         start_time = time.time()
         rectangles, points = detect_face(img, self.minsize,
                                          self.pnet_fun, self.rnet_fun, self.onet_fun,
                                          self.threshold, self.factor)
         duration = time.time() - start_time
-
+        return rectangles, points
+        
         print(duration)
         print(type(rectangles))
         points = np.transpose(points)
@@ -123,9 +128,10 @@ class FaceDectect:
             for i in range(0, 10, 2):
                 cv2.circle(img, (int(point[i]), int(
                     point[i + 1])), 2, (0, 255, 0))
+
         cv2.imshow("test", img)
-        #if args.save_image:
-        #    cv2.imwrite(args.save_name, img)
+        if save_name is not None:
+            cv2.imwrite(save_name, img)
         if cv2.waitKey(0) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
 
@@ -254,11 +260,12 @@ def parse_arguments(argv):
     return parser.parse_args(argv)
 
 
+face_detector = FaceDectect()
+face_detector.detect('images/more_people.jpg')
+
+'''
 if __name__ == '__main__':
     #main(parse_arguments(sys.argv[1:]))
-    with tf.device('/gpu:0'):
-        with tf.Graph().as_default():
-            config = tf.ConfigProto(allow_soft_placement=True)
-            with tf.Session(config=config) as sess:
-                face_detector = FaceDectect(parse_arguments(sys.argv[1:]), sess)
-                face_detector.detect('images/more_people.jpg')
+    face_detector = FaceDectect()
+    face_detector.detect('images/more_people.jpg')
+'''
