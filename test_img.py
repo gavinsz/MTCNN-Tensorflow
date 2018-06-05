@@ -108,14 +108,15 @@ def main(args):
                                                  args.threshold, args.factor)
                 duration = time.time() - start_time
 
-                print(duration)
-                print(type(rectangles))
                 points = np.transpose(points)
+                print('face detect cost=%ds|total rectangles=%d|points=%d'%(duration, rectangles.shape[0], points.shape[0]))
                 for rectangle in rectangles:
+                    '''
                     cv2.putText(img, str(rectangle[4]),
                                 (int(rectangle[0]), int(rectangle[1])),
                                 cv2.FONT_HERSHEY_SIMPLEX,
                                 0.5, (0, 255, 0))
+                    '''
                     cv2.rectangle(img, (int(rectangle[0]), int(rectangle[1])),
                                   (int(rectangle[2]), int(rectangle[3])),
                                   (255, 0, 0), 1)
@@ -144,7 +145,7 @@ def parse_arguments(argv):
         type=float,
         nargs=3,
         help='Three thresholds for pnet, rnet, onet, respectively.',
-        default=[0.8, 0.8, 0.8])
+        default=[0.6, 0.7, 0.8])
     parser.add_argument('--minsize', type=int,
                         help='The minimum size of face to detect.', default=20)
     parser.add_argument('--factor', type=float,
