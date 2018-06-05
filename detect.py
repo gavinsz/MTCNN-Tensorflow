@@ -112,7 +112,7 @@ class FaceDectect:
                                          self.threshold, self.factor)
         duration = time.time() - start_time
         return rectangles, points
-        
+
         print(duration)
         print(type(rectangles))
         points = np.transpose(points)
@@ -261,7 +261,7 @@ def parse_arguments(argv):
 
 
 face_detector = FaceDectect()
-face_detector.detect('images/more_people.jpg')
+#print(face_detector.detect('images/more_people.jpg'))
 
 '''
 if __name__ == '__main__':
