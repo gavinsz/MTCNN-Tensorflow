@@ -29,13 +29,25 @@ import cv2
 import numpy as np
 
 from src.mtcnn import PNet, RNet, ONet
-from tools import detect_face, get_model_filenames
+from tools import detect_face, get_model_filenames, extract_image_chips
 
 class FaceDectect:
-    def __init__(self, ):
-        self.minsize = 20
+    def __init__(self):
+        """
+            Initialize the detector
+
+            Parameters:
+            ----------
+                minsize : float number
+                    minimal face to detect
+                threshold : float number
+                    detect threshold for 3 stages
+                factor: float number
+                    scale factor for image pyramid
+        """
+        self.minsize = 30
         self.factor = 0.7
-        self.threshold = [0.6, 0.7, 0.8]
+        self.threshold = [0.7, 0.7, 0.8]
         self.model_dir = 'save_model/all_in_one'
         self.sess = tf.Session()
 
@@ -104,18 +116,8 @@ class FaceDectect:
                             'onet/conv6-2/onet/conv6-2:0',
                             'onet/conv6-3/onet/conv6-3:0'),
                             feed_dict={'Placeholder_2:0': img})
-    def detect(self, file, save_name=None):
-        img = cv2.imread(file)
-        start_time = time.time()
-        rectangles, points = detect_face(img, self.minsize,
-                                         self.pnet_fun, self.rnet_fun, self.onet_fun,
-                                         self.threshold, self.factor)
-        duration = time.time() - start_time
-        return rectangles, points
 
-        print(duration)
-        print(type(rectangles))
-        points = np.transpose(points)
+    def display(self, img, rectangles, points, save_name=None):
         for rectangle in rectangles:
             cv2.putText(img, str(rectangle[4]),
                         (int(rectangle[0]), int(rectangle[1])),
@@ -124,7 +126,7 @@ class FaceDectect:
             cv2.rectangle(img, (int(rectangle[0]), int(rectangle[1])),
                             (int(rectangle[2]), int(rectangle[3])),
                             (255, 0, 0), 1)
-        for point in points:
+        for point in points:    
             for i in range(0, 10, 2):
                 cv2.circle(img, (int(point[i]), int(
                     point[i + 1])), 2, (0, 255, 0))
@@ -135,137 +137,43 @@ class FaceDectect:
         if cv2.waitKey(0) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
 
-def main(args):
-    img = cv2.imread(args.image_path)
-    file_paths = get_model_filenames(args.model_dir)
-    with tf.device('/gpu:0'):
-        with tf.Graph().as_default():
-            config = tf.ConfigProto(allow_soft_placement=True)
-            with tf.Session(config=config) as sess:
-                if len(file_paths) == 3:
-                    image_pnet = tf.placeholder(
-                        tf.float32, [None, None, None, 3])
-                    pnet = PNet({'data': image_pnet}, mode='test')
-                    out_tensor_pnet = pnet.get_all_output()
+    def gen_5pt(self, img, save_name):
+        rectangles, points = detect_face(img, self.minsize,
+                            self.pnet_fun, self.rnet_fun, self.onet_fun,
+                            self.threshold, self.factor)
+        if rectangles.shape[0] > 0:
+            points = np.transpose(points)
+            #print landmake
+            for p in points:
+                #x0, y0, x1, y1....
+                five_pt_array = np.array([(p[0], p[1]), (p[2], p[3]), (p[4], p[5]), (p[6], p[7]), (p[8], p[9])])
+                np.savetxt(save_name, five_pt_array, fmt='%d', newline='\n')
 
-                    image_rnet = tf.placeholder(tf.float32, [None, 24, 24, 3])
-                    rnet = RNet({'data': image_rnet}, mode='test')
-                    out_tensor_rnet = rnet.get_all_output()
+    def detect(self, file, save_name=None):
+        img = cv2.imread(file)
+        start_time = time.time()
+        rectangles, points = detect_face(img, self.minsize,
+                                         self.pnet_fun, self.rnet_fun, self.onet_fun,
+                                         self.threshold, self.factor)
+        points = np.transpose(points)                                         
+        duration = time.time() - start_time
+        
+        print('face detect cost=%ds|totol faces=%d' %(duration, rectangles.shape[0]))
+        #print('points=', points)
 
-                    image_onet = tf.placeholder(tf.float32, [None, 48, 48, 3])
-                    onet = ONet({'data': image_onet}, mode='test')
-                    out_tensor_onet = onet.get_all_output()
+        if rectangles.shape[0] > 0:
+            chips = extract_image_chips(img, points, 128, 0.2)
+            for i, chip in enumerate(chips):
+                #cv2.imshow('chip_'+str(i), chip)
+                cv2.imwrite('tmp/chip_'+str(i)+'.png', chip)
+                self.gen_5pt(chip, 'tmp/chip_'+ str(i) + '.5pt')
 
-                    saver_pnet = tf.train.Saver(
-                                    [v for v in tf.global_variables()
-                                     if v.name[0:5] == "pnet/"])
-                    saver_rnet = tf.train.Saver(
-                                    [v for v in tf.global_variables()
-                                     if v.name[0:5] == "rnet/"])
-                    saver_onet = tf.train.Saver(
-                                    [v for v in tf.global_variables()
-                                     if v.name[0:5] == "onet/"])
-
-                    saver_pnet.restore(sess, file_paths[0])
-
-                    def pnet_fun(img): return sess.run(
-                        out_tensor_pnet, feed_dict={image_pnet: img})
-
-                    saver_rnet.restore(sess, file_paths[1])
-
-                    def rnet_fun(img): return sess.run(
-                        out_tensor_rnet, feed_dict={image_rnet: img})
-
-                    saver_onet.restore(sess, file_paths[2])
-
-                    def onet_fun(img): return sess.run(
-                        out_tensor_onet, feed_dict={image_onet: img})
-
-                else:
-                    saver = tf.train.import_meta_graph(file_paths[0])
-                    saver.restore(sess, file_paths[1])
-
-                    def pnet_fun(img): return sess.run(
-                        ('softmax/Reshape_1:0',
-                         'pnet/conv4-2/BiasAdd:0'),
-                        feed_dict={
-                            'Placeholder:0': img})
-
-                    def rnet_fun(img): return sess.run(
-                        ('softmax_1/softmax:0',
-                         'rnet/conv5-2/rnet/conv5-2:0'),
-                        feed_dict={
-                            'Placeholder_1:0': img})
-
-                    def onet_fun(img): return sess.run(
-                        ('softmax_2/softmax:0',
-                         'onet/conv6-2/onet/conv6-2:0',
-                         'onet/conv6-3/onet/conv6-3:0'),
-                        feed_dict={
-                            'Placeholder_2:0': img})
-
-                start_time = time.time()
-                rectangles, points = detect_face(img, args.minsize,
-                                                 pnet_fun, rnet_fun, onet_fun,
-                                                 args.threshold, args.factor)
-                duration = time.time() - start_time
-
-                print(duration)
-                print(type(rectangles))
-                points = np.transpose(points)
-                for rectangle in rectangles:
-                    cv2.putText(img, str(rectangle[4]),
-                                (int(rectangle[0]), int(rectangle[1])),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.5, (0, 255, 0))
-                    cv2.rectangle(img, (int(rectangle[0]), int(rectangle[1])),
-                                  (int(rectangle[2]), int(rectangle[3])),
-                                  (255, 0, 0), 1)
-                for point in points:
-                    for i in range(0, 10, 2):
-                        cv2.circle(img, (int(point[i]), int(
-                            point[i + 1])), 2, (0, 255, 0))
-                cv2.imshow("test", img)
-                if args.save_image:
-                    cv2.imwrite(args.save_name, img)
-                if cv2.waitKey(0) & 0xFF == ord('q'):
-                    cv2.destroyAllWindows()
-
-
-def parse_arguments(argv):
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--image_path', type=str,
-                        help='The image path of the testing image',
-                        default='images/more_people.jpg')
-    parser.add_argument('--model_dir', type=str,
-                        help='The directory of trained model',
-                        default='./save_model/all_in_one/')
-    parser.add_argument(
-        '--threshold',
-        type=float,
-        nargs=3,
-        help='Three thresholds for pnet, rnet, onet, respectively.',
-        default=[0.6, 0.7, 0.8])
-    parser.add_argument('--minsize', type=int,
-                        help='The minimum size of face to detect.', default=20)
-    parser.add_argument('--factor', type=float,
-                        help='The scale stride of orginal image', default=0.7)
-    parser.add_argument('--save_image', type=bool,
-                        help='Whether to save the result image', default=False)
-    parser.add_argument('--save_name', type=str,
-                        help='If save_image is true, specify the output path.',
-                        default='result.jpg')
-
-    return parser.parse_args(argv)
-
+        #self.display(img,rectangles, points)
+        return rectangles, points
 
 face_detector = FaceDectect()
-#print(face_detector.detect('images/more_people.jpg'))
 
-'''
 if __name__ == '__main__':
     #main(parse_arguments(sys.argv[1:]))
-    face_detector = FaceDectect()
-    face_detector.detect('images/more_people.jpg')
-'''
+    #face_detector = FaceDectect()
+    face_detector.detect('images/test2.jpg')

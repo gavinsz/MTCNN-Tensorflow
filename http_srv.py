@@ -15,9 +15,9 @@ def upload_file():
     if request.method == 'POST':
         f = request.files['file']
         f.save('tmp/tmp.jpg')
-        print('recv upload req')
+        #print('recv upload req')
         bb, _=detect.face_detector.detect('tmp/tmp.jpg')
-        print('boxes=', bb)
+        #print('boxes=', bb)
         return json.dumps(bb.tolist())
         return send_file('data/tmp_cropped.png')
     return 'Hello, World!'
