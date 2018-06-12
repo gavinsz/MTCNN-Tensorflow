@@ -669,3 +669,170 @@ def extract_image_chips(img, points, desired_size=256, padding=0):
         crop_imgs.append(chips)
 
     return crop_imgs
+
+def transform(x, y, ang, s0, s1):
+    '''
+    x y position
+    ang angle
+    s0 size of original image
+    s1 size of target image
+    '''
+
+    x0 = x - s0[1]/2
+    y0 = y - s0[0]/2
+    xx = x0*math.cos(ang) - y0*math.sin(ang) + s1[1]/2
+    yy = x0*math.sin(ang) + y0*math.cos(ang) + s1[0]/2
+    print('x=', x, 'y=', y, 'x0=', x0, 'y0=',y0, 'ang=', ang, 's0=', s0, 's1=', s1)
+    return xx, yy
+
+def align(img, f5pt, crop_size, ec_mc_y, ec_y):
+    
+    #print('orgin f5pt=', f5pt)
+    f5pt = np.reshape(f5pt, (5,2))
+    #print('reshaped f5pt=', f5pt)
+    if f5pt[0, 1] == f5pt[1, 1]:
+        ang = 0
+    else:
+        # (y0-y1) / (x0-x1)
+        ang_tan = (f5pt[0,1]-f5pt[1,1]) / (f5pt[0,0] - f5pt[1,0])
+        ang = math.atan(ang_tan) / math.pi * 180
+
+    #print('y=',(f5pt[0,1]-f5pt[1,1]), 'x=', (f5pt[0,0] - f5pt[1,0]), 'ang_tan=', ang_tan, 'ang=', ang)
+    #rot_mat = cv2.getRotationMatrix2D((cx, cy), ang, 1.0)
+    img_rot = rotate_bound(img, ang)
+    print('img_rot shape=', img_rot.shape)
+    '''
+    cv2.imshow("img_rot", img_rot)
+    if cv2.waitKey(0) & 0xFF == ord('q'):
+        cv2.destroyAllWindows()
+    '''
+
+    #eye center
+    x = (f5pt[0,0] + f5pt[1,0]) / 2
+    y = (f5pt[0,1] + f5pt[1,1]) / 2
+
+    ang = -ang/180 * math.pi
+    xx, yy = transform(x, y, ang, img.shape, img_rot.shape)
+    eyec = np.array([xx, yy])
+    eyec = np.round(eyec)
+    print('eyec=', eyec)
+
+    tem = f5pt.shape
+    if tem[0] == 5:
+        x = (f5pt[3,0]+f5pt[4,0]) / 2
+        y = (f5pt[3,1]+f5pt[4,1]) / 2
+    elif tem[0] == 4:
+        x = f5pt[3,0]
+        y = f5pt[3,1]
+
+    xx, yy = transform(x, y, ang, img.shape, img_rot.shape)
+    mouthc = np.array([round(xx), round(yy)])
+    print('mouthc=', mouthc)
+
+    resize_scale = ec_mc_y / (mouthc[1]-eyec[1])
+    if resize_scale < 0:
+        resize_scale = 1
+    print('resize_scale=', resize_scale)
+
+    img_resize = cv2.resize(img_rot, None, fx=resize_scale, fy=resize_scale);
+    print('img_resize shape=', img_resize.shape)
+
+    eyec2 = (eyec - [img_rot.shape[1]/2, img_rot.shape[0]/2]) * resize_scale + [img_resize.shape[1]/2, img_resize.shape[0]/2];
+    eyec2 = np.round(eyec2)
+    print('eyec2=', eyec2)
+    
+    #build trans_points centers for five parts
+    trans_points = np.zeros(f5pt.shape)
+    [trans_points[:,0],trans_points[:,1]] = transform(f5pt[:,0],f5pt[:,1], ang, img.shape, img_rot.shape)
+    trans_points = np.round(trans_points)
+    print('trans_points=', trans_points)
+
+    trans_points[:,0] = trans_points[:,0] - img_rot.shape[1] / 2
+    trans_points[:,1] = trans_points[:,1] - img_rot.shape[0] / 2
+    trans_points =  trans_points * resize_scale
+    trans_points[:,0] = trans_points[:,0] + img_resize.shape[1] / 2
+    trans_points[:,1] = trans_points[:,1] + img_resize.shape[0] / 2
+    trans_points = np.round(trans_points)
+    print('trans_points=', trans_points)
+
+    img_crop = np.zeros((crop_size, crop_size, img_rot.shape[2]))
+    # crop_y = eyec2(2) -floor(crop_size*1/3);
+    crop_y = eyec2[1] - ec_y
+    crop_y_end = crop_y + crop_size - 1
+    crop_x = eyec2[0]-math.floor(crop_size/2)
+    crop_x_end = crop_x + crop_size - 1
+
+    box = guard([crop_x, crop_x_end, crop_y, crop_y_end], img_resize.shape)
+    print('box=', box, 'crop_y=', crop_y, 'crop_y_end=', crop_y_end, 'crop_x=', crop_x, 'crop_x_end=', crop_x_end)
+    print('[box[2]-crop_y+1=', box[2]-crop_y+1, 'box[3]-crop_y+1=', box[3]-crop_y+1, 'box[0]-crop_x+1=', box[0]-crop_x+1, 'crop_x+1=', crop_x+1)
+    print('img_resize shape=',  img_resize.shape, '[%d:%d, %d:%d,:]'%(box[2],box[3],box[0],box[1]))
+    
+    img_crop[int(box[2]-crop_y+1):int(box[3]-crop_y+1), int(box[0]-crop_x+1):int(box[1]-crop_x+1),:] \
+        = img_resize[int(box[2]):int(box[3]),int(box[0]):int(box[1]),:];
+    
+    
+    #calculate relative coordinate
+    trans_points[:,0] = trans_points[:,0] - box[0] + 1
+    trans_points[:,1] = trans_points[:,1] - box[2] + 1
+    # img_crop = img_rot(crop_y:crop_y+img_size-1,crop_x:crop_x+img_size-1);
+    ropped = img_crop/255
+    '''
+    cv2.imshow('img_crop', ropped)
+    if cv2.waitKey(0) & 0xFF == ord('q'):
+        cv2.destroyAllWindows()
+    '''
+    return img_crop, trans_points
+
+def normal_array(x):
+    for i in range(len(x)):
+        if x[i] < 1:
+            x[i] = 1
+    return x
+
+def guard(x, N):
+    x = normal_array(x)
+
+    if N[1] > 0:
+        for i in range(0, 2):
+            if x[i] > N[1]:
+                x[i] = N[1]
+        #x[eng.logical((x>N[1]) * [1, 1, 0, 0])]=N[1]
+
+    if N[0] > 0:
+        for i in range(2, 4):
+            if x[i] > N[0]:
+                x[i] = N[0]
+        #x[eng.logical((x>N[0]) * [0, 0, 1, 1])]=N[0]
+
+    x = normal_array(x)
+    return x
+
+def rotate_bound(image, angle):
+    # grab the dimensions of the image and then determine the
+    # center
+    (h, w) = image.shape[:2]
+    (cX, cY) = (w // 2, h // 2)
+ 
+    # grab the rotation matrix (applying the negative of the
+    # angle to rotate clockwise), then grab the sine and cosine
+    # (i.e., the rotation components of the matrix)
+    M = cv2.getRotationMatrix2D((cX, cY), angle, 1.0)
+    cos = np.abs(M[0, 0])
+    sin = np.abs(M[0, 1])
+ 
+    # compute the new bounding dimensions of the image
+    nW = int((h * sin) + (w * cos))
+    nH = int((h * cos) + (w * sin))
+ 
+    # adjust the rotation matrix to take into account translation
+    M[0, 2] += (nW / 2) - cX
+    M[1, 2] += (nH / 2) - cY
+ 
+    # perform the actual rotation and return the image
+    return cv2.warpAffine(image, M, (nW, nH))
+
+if __name__ == '__main__':
+    f5pt =  [325.43692, 111.24762, 444.32767, 115.61556, 421.4109,  
+            201.54337, 326.83676, 259.92032, 421.9754, 260.3804]
+    img = cv2.imread('images/613_04_01_190_12_cropped.jpg')
+    align(img, f5pt, 128, 48, 40)

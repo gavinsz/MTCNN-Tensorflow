@@ -5,7 +5,15 @@ from werkzeug import secure_filename
 import json
 import detect
 import os
+import logging
 
+# 通过下面的方式进行简单配置输出方式与日志级别
+#logging.basicConfig(filename='logger.log', level=logging.INFO)
+logging.basicConfig(filename='logger.log', 
+                    format='%(asctime)s %(levelname)s [%(filename)s:%(lineno)d] %(message)s', 
+                    level = logging.INFO,
+                    filemode='a',
+                    datefmt='%Y-%m-%d %H:%M:%S')
 app = Flask(__name__)
 ALLOWED_EXTENSIONS = set(['png', 'jpg', 'jpeg', 'gif'])
 app.config['UPLOAD_FOLDER'] = 'tmp'
@@ -32,7 +40,7 @@ def upload_file():
             print('save_path=%s'%(save_path))
             file.save(save_path)
         
-            bb, _=detect.face_detector.detect(save_path)
+            bb, _=detect.face_detector.detect(save_path, filename)
         return json.dumps(bb.tolist())
         return send_file('data/tmp_cropped.png')
     return 'Hello, World!'

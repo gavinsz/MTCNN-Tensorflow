@@ -27,9 +27,9 @@ import time
 import tensorflow as tf
 import cv2
 import numpy as np
-
+from cv2_detector import Cv2FaceDetector
 from src.mtcnn import PNet, RNet, ONet
-from tools import detect_face, get_model_filenames, extract_image_chips
+from tools import detect_face, get_model_filenames, extract_image_chips, align
 
 class FaceDectect:
     def __init__(self):
@@ -45,11 +45,12 @@ class FaceDectect:
                 factor: float number
                     scale factor for image pyramid
         """
-        self.minsize = 30
+        self.minsize = 10
         self.factor = 0.7
-        self.threshold = [0.7, 0.7, 0.8]
+        self.threshold = [0.6, 0.7, 0.8]
         self.model_dir = 'save_model/all_in_one'
         self.sess = tf.Session()
+        self.cv2_detector = Cv2FaceDetector()
 
         file_paths = get_model_filenames(self.model_dir)
         if len(file_paths) == 3:
@@ -149,8 +150,14 @@ class FaceDectect:
                 five_pt_array = np.array([(p[0], p[1]), (p[2], p[3]), (p[4], p[5]), (p[6], p[7]), (p[8], p[9])])
                 np.savetxt(save_name, five_pt_array, fmt='%d', newline='\n')
 
-    def detect(self, file, save_name=None):
-        img = cv2.imread(file)
+    def save_5pt(self, p, save_name):
+        #x0, y0, x1, y1....
+        five_pt_array = np.array([(p[0], p[1]), (p[2], p[3]), (p[4], p[5]), (p[6], p[7]), (p[8], p[9])])
+        np.savetxt(save_name, five_pt_array, fmt='%d', newline='\n')
+
+    def detect(self, full_path, file_name):
+        img = cv2.imread(full_path)
+        succ, _ = self.cv2_detector.face_detected(img)
         start_time = time.time()
         rectangles, points = detect_face(img, self.minsize,
                                          self.pnet_fun, self.rnet_fun, self.onet_fun,
@@ -162,11 +169,25 @@ class FaceDectect:
         #print('points=', points)
 
         if rectangles.shape[0] > 0:
-            chips = extract_image_chips(img, points, 128, 0.2)
+            i = 0
+            for point in points:
+                chip, key_points = align(img, point, 128, 48, 40)
+                key_points = np.resize(key_points, 10)
+                print('key_points=', key_points)
+                self.save_5pt(key_points, 'tmp/'+str(i+603)+file_name+'.5pt')
+                cv2.imwrite('tmp/'+str(i+603)+file_name+'.png', chip)
+                i += 1
+            '''
+            chips = extract_image_chips(img, points, 128, 0.39)
             for i, chip in enumerate(chips):
-                #cv2.imshow('chip_'+str(i), chip)
-                cv2.imwrite('tmp/chip_'+str(i)+'.png', chip)
-                self.gen_5pt(chip, 'tmp/chip_'+ str(i) + '.5pt')
+                succ, _ = self.cv2_detector.face_detected(chip)
+                if True is True:
+                    #cv2.imshow('chip_'+str(i), chip)
+                    cv2.imwrite('tmp/'+str(i+603)+file_name+'.png', chip)
+                    self.gen_5pt(chip, 'tmp/'+str(i+603)+file_name+'.5pt')
+                else:
+                    print('chip_'+ str(i) + ' not deteced face')
+            '''
 
         #self.display(img,rectangles, points)
         return rectangles, points
@@ -176,4 +197,8 @@ face_detector = FaceDectect()
 if __name__ == '__main__':
     #main(parse_arguments(sys.argv[1:]))
     #face_detector = FaceDectect()
-    face_detector.detect('images/test2.jpg')
+    face_detector.detect('images/613_04_01_190_12_cropped.jpg', '_613_04_01_190_12_cropped')
+    #face_detector.detect('images/611_04_01_190_12.jpg', '613_04_01_190_12_cropped')
+    #face_detector.detect('images/689_01_01_041_12.png', '689_01_01_041_12')
+    #face_detector.detect('images/03.jpg', '03_')
+    #face_detector.detect('images/38480_1528181355018882.jpg', '_04_01_190_12_cropped
