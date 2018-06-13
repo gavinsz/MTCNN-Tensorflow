@@ -45,9 +45,9 @@ class FaceDectect:
                 factor: float number
                     scale factor for image pyramid
         """
-        self.minsize = 10
+        self.minsize = 30
         self.factor = 0.7
-        self.threshold = [0.6, 0.7, 0.8]
+        self.threshold = [0.7, 0.7, 0.8]
         self.model_dir = 'save_model/all_in_one'
         self.sess = tf.Session()
         self.cv2_detector = Cv2FaceDetector()
@@ -138,6 +138,13 @@ class FaceDectect:
         if cv2.waitKey(0) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
 
+    def display_chip(self, img, points):
+        for i in range(0, 10, 2):
+            cv2.circle(img, (int(points[i]), int(points[i + 1])), 3, (0, 255, 0))
+        cv2.imshow("chip", img)
+        if cv2.waitKey(0) & 0xFF == ord('q'):
+            cv2.destroyAllWindows()
+
     def gen_5pt(self, img, save_name):
         rectangles, points = detect_face(img, self.minsize,
                             self.pnet_fun, self.rnet_fun, self.onet_fun,
@@ -173,10 +180,12 @@ class FaceDectect:
             for point in points:
                 chip, key_points = align(img, point, 128, 48, 40)
                 key_points = np.resize(key_points, 10)
-                print('key_points=', key_points)
-                self.save_5pt(key_points, 'tmp/'+str(i+603)+file_name+'.5pt')
-                cv2.imwrite('tmp/'+str(i+603)+file_name+'.png', chip)
+                #print('key_points=', key_points)
+                self.save_5pt(key_points, 'tmp/'+str(i+987)+file_name+'.5pt')
+                cv2.imwrite('tmp/'+str(i+987)+file_name+'.png', chip)
+                #self.display_chip(chip/255, key_points)
                 i += 1
+
             '''
             chips = extract_image_chips(img, points, 128, 0.39)
             for i, chip in enumerate(chips):
@@ -197,8 +206,9 @@ face_detector = FaceDectect()
 if __name__ == '__main__':
     #main(parse_arguments(sys.argv[1:]))
     #face_detector = FaceDectect()
-    face_detector.detect('images/613_04_01_190_12_cropped.jpg', '_613_04_01_190_12_cropped')
+    #face_detector.detect('images/613_04_01_190_12_cropped.jpg', '_613_04_01_190_12_cropped')
     #face_detector.detect('images/611_04_01_190_12.jpg', '613_04_01_190_12_cropped')
     #face_detector.detect('images/689_01_01_041_12.png', '689_01_01_041_12')
     #face_detector.detect('images/03.jpg', '03_')
-    #face_detector.detect('images/38480_1528181355018882.jpg', '_04_01_190_12_cropped
+    #face_detector.detect('images/38480_1528181355018882.jpg', '_04_01_190_12_cropped')
+    face_detector.detect('images/oscar1.jpg', '_oscar1_04_01_190_12_cropped')
